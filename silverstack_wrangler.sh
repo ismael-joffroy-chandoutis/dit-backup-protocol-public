@@ -15,7 +15,7 @@ NOMAD="${NOMAD_SSH}"
 MINI="${MINI_SSH}"
 LOG="/tmp/silverstack_wrangler.log"
 RCLONE="C:\\ProgramData\\chocolatey\\bin\\rclone.exe"
-R2_BUCKET="cloudflare-r2:${R2_BUCKET_NAME}"
+R2_BUCKET="cloudflare-r2:${R2_BUCKET}"
 
 log()    { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$LOG"; }
 notify() { ~/.claude/scripts/notify.sh "$*" 2>/dev/null || true; }

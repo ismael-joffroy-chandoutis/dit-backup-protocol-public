@@ -613,10 +613,19 @@ def get_status():
     hash_a015_src    = get_hash_progress("/tmp/A015_source_xxh128.txt", 33)
     hash_iphone_src  = get_hash_progress("/tmp/iPhone_source_xxh128.txt", 80)
     hash_a020_nav1   = get_hash_progress("/tmp/A020_nav1_xxh128.txt", 25)
+    hash_a015_nav1   = get_hash_progress("/tmp/A015_nav1_xxh128.txt", 33)
     hash_iphone_nav1 = get_hash_progress("/tmp/iPhone_nav1_xxh128.txt", 80)
     hash_a015_nav2   = get_hash_progress("/tmp/A015_nav2_xxh128.txt", 33, running_fn=rclone_hashsum_running)
     hash_a020_nav2   = get_hash_progress("/tmp/A020_nav2_xxh128.txt", 25, running_fn=rclone_hashsum_running)
     hash_iphone_nav2 = get_hash_progress("/tmp/iPhone_nav2_xxh128.txt", 80, running_fn=rclone_hashsum_running)
+
+    # BIT-PERFECT A015 Nav1
+    bitperfect_a015_nav1 = False
+    if Path("/tmp/A015_source_xxh128.txt").exists() and Path("/tmp/A015_nav1_xxh128.txt").exists():
+        src_b2 = braw_only_sorted("/tmp/A015_source_xxh128.txt")
+        dst_b2 = braw_only_sorted("/tmp/A015_nav1_xxh128.txt")
+        bitperfect_a015_nav1 = (src_b2 is not None and dst_b2 is not None
+                                and src_b2 == dst_b2 and len(src_b2) > 0)
 
     # BIT-PERFECT A020 Nav2
     bitperfect_a020_nav2 = False
@@ -694,6 +703,17 @@ def get_status():
             },
             {
                 "label": "A015 BRAW",
+                "dest": "Nav1",
+                "machine": "MacBook",
+                "status": "done" if bitperfect_a015_nav1 or count_nav1_files("/Volumes/NAV1_VOLUME/A015_BRAW_2026-03-28") >= 33 else "waiting",
+                "percent": 100 if count_nav1_files("/Volumes/NAV1_VOLUME/A015_BRAW_2026-03-28") >= 33 else 0,
+                "speed": "—",
+                "eta": "—",
+                "files": f"{count_nav1_files('/Volumes/NAV1_VOLUME/A015_BRAW_2026-03-28')}/33",
+                "bitperfect": bitperfect_a015_nav1,
+            },
+            {
+                "label": "A015 BRAW",
                 "dest": "Nav2",
                 "machine": "Nomad",
                 "status": nav2_a015_status,
@@ -758,6 +778,7 @@ def get_status():
         "hash": {
             "a020_nav1": bitperfect_nav1,
             "a020_nav2": bitperfect_a020_nav2,
+            "a015_nav1": bitperfect_a015_nav1,
             "a015_nav2": bitperfect_a015,
             "iphone_nav1": bitperfect_iphone,
             "iphone_nav2": bitperfect_iphone_nav2,
@@ -767,6 +788,7 @@ def get_status():
             {"label": "xxhsum A015 source",    "machine": "MacBook", **hash_a015_src},
             {"label": "xxhsum iPhone source",  "machine": "MacBook", **hash_iphone_src},
             {"label": "xxhsum A020 → Nav1",    "machine": "MacBook", **hash_a020_nav1},
+            {"label": "xxhsum A015 → Nav1",    "machine": "MacBook", **hash_a015_nav1},
             {"label": "xxhsum iPhone → Nav1",  "machine": "MacBook", **hash_iphone_nav1},
             {"label": "xxhsum A015 → Nav2",    "machine": "Nomad",   **hash_a015_nav2},
             {"label": "xxhsum A020 → Nav2",    "machine": "Nomad",   **hash_a020_nav2},
