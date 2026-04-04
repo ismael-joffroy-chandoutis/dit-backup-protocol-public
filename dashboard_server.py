@@ -5,11 +5,13 @@ import json, re, os, glob, shutil, tempfile, time, subprocess
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from datetime import datetime
+from urllib.parse import urlparse, parse_qs
 
 # Cache SSH calls — (result, timestamp)
 _ssh_cache: dict = {}
 
 XP_FILE = "/tmp/backup_dashboard/xp.json"
+PROXY_DIR = "/tmp/backup_proxies"
 
 LEVELS = [
     (0,     "Trainee DIT"),
@@ -953,26 +955,144 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory="/tmp/backup_dashboard", **kwargs)
 
+    def _json_response(self, data, status=200):
+        body = json.dumps(data, ensure_ascii=False).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", len(body))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _qs(self):
+        parsed = urlparse(self.path)
+        return parsed.path, parse_qs(parsed.query)
+
     def do_GET(self):
-        if self.path == "/api/status":
+        path, qs = self._qs()
+
+        if path == "/api/status":
             try:
                 data = get_status()
-                body = json.dumps(data).encode()
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.send_header("Content-Length", len(body))
-                self.end_headers()
-                self.wfile.write(body)
+                self._json_response(data)
             except Exception as e:
-                err = json.dumps({"error": str(e)}).encode()
-                self.send_response(500)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", len(err))
+                self._json_response({"error": str(e)}, 500)
+
+        elif path == "/api/metadata":
+            folder = qs.get("folder", [None])[0]
+            if not folder:
+                self._json_response({"error": "?folder= requis"}, 400)
+                return
+            try:
+                from metadata import extract_metadata
+                clips = extract_metadata(folder)
+                self._json_response({"folder": folder, "clips": clips, "count": len(clips)})
+            except Exception as e:
+                self._json_response({"error": str(e)}, 500)
+
+        elif path == "/api/generate-proxies":
+            source = qs.get("source", [None])[0]
+            dest = qs.get("dest", [PROXY_DIR])[0]
+            if not source:
+                self._json_response({"error": "?source= requis"}, 400)
+                return
+            try:
+                from generate_proxies import start_batch
+                result = start_batch(source, dest)
+                self._json_response(result)
+            except Exception as e:
+                self._json_response({"error": str(e)}, 500)
+
+        elif path == "/api/proxy-progress":
+            try:
+                from generate_proxies import get_progress
+                self._json_response(get_progress())
+            except Exception as e:
+                self._json_response({"error": str(e)}, 500)
+
+        elif path == "/api/proxies":
+            try:
+                proxy_path = Path(PROXY_DIR)
+                proxy_path.mkdir(parents=True, exist_ok=True)
+                clips = []
+                for f in sorted(proxy_path.iterdir()):
+                    if f.suffix.lower() == ".mp4":
+                        clips.append({
+                            "name": f.name,
+                            "path": f"/proxy-files/{f.name}",
+                            "size_mb": round(f.stat().st_size / 1e6, 1),
+                        })
+                self._json_response({"clips": clips, "count": len(clips)})
+            except Exception as e:
+                self._json_response({"error": str(e)}, 500)
+
+        elif path.startswith("/proxy-files/"):
+            # Servir les fichiers proxy directement
+            filename = path.replace("/proxy-files/", "")
+            filepath = Path(PROXY_DIR) / filename
+            if filepath.exists() and filepath.suffix.lower() == ".mp4":
+                self.send_response(200)
+                self.send_header("Content-Type", "video/mp4")
+                self.send_header("Content-Length", filepath.stat().st_size)
+                self.send_header("Accept-Ranges", "bytes")
                 self.end_headers()
-                self.wfile.write(err)
+                with open(filepath, "rb") as f:
+                    shutil.copyfileobj(f, self.wfile)
+            else:
+                self.send_error(404)
+
         else:
             super().do_GET()
+
+    def do_POST(self):
+        path, qs = self._qs()
+
+        if path == "/api/generate-mhl":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(content_length) if content_length > 0 else b"{}"
+                params = json.loads(body)
+                folder = params.get("folder", "")
+                if not folder or not os.path.isdir(folder):
+                    self._json_response({"error": f"Invalid folder path: {folder}"}, 400)
+                    return
+                # Run MHL generation in a subprocess to avoid blocking the server
+                script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "generate_mhl.py")
+                result = subprocess.run(
+                    ["python", script, folder],
+                    capture_output=True, text=True, timeout=600,
+                )
+                if result.returncode == 0:
+                    # Extract the created file path from output
+                    mhl_file = None
+                    for line in result.stdout.splitlines():
+                        if "Generation saved:" in line or line.startswith("MHL manifest:"):
+                            mhl_file = line.split(":", 1)[1].strip()
+                    self._json_response({
+                        "status": "ok",
+                        "mhl_file": mhl_file,
+                        "output": result.stdout,
+                    })
+                else:
+                    self._json_response({
+                        "status": "error",
+                        "error": result.stderr or result.stdout,
+                    }, 500)
+            except subprocess.TimeoutExpired:
+                self._json_response({"error": "MHL generation timed out (10 min limit)"}, 504)
+            except Exception as e:
+                self._json_response({"error": str(e)}, 500)
+        else:
+            self._json_response({"error": "Not found"}, 404)
+
+    def do_OPTIONS(self):
+        """Handle CORS preflight for POST requests."""
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def log_message(self, *args):
         pass  # silencieux

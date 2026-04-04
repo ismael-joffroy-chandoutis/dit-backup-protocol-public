@@ -207,12 +207,96 @@
   @keyframes flashG { 0%,100% { background:var(--surface); } 50% { background:rgba(16,185,129,0.12); } }
   @keyframes flashR { 0%,100% { background:var(--surface); } 50% { background:rgba(239,68,68,0.12); } }
 
+  /* ── Playback section ── */
+  .playback-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 14px;
+  }
+  .proxy-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 10px;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  .proxy-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+    border: 1px solid transparent;
+    font-size: 0.82rem;
+  }
+  .proxy-item:hover {
+    background: rgba(124,58,237,0.08);
+    border-color: var(--accent);
+  }
+  .proxy-item.active {
+    background: rgba(124,58,237,0.12);
+    border-color: var(--accent);
+  }
+  .proxy-item-name {
+    color: var(--text);
+    font-weight: bold;
+    letter-spacing: 0.02em;
+  }
+  .proxy-item-size {
+    color: var(--muted);
+    font-size: 0.7rem;
+  }
+  .player-wrap {
+    margin-top: 12px;
+    border-radius: 8px;
+    overflow: hidden;
+    display: none;
+  }
+  .player-wrap.visible { display: block; }
+  /* Video.js theme override — dark to match dashboard */
+  .video-js .vjs-control-bar {
+    background: rgba(18,18,26,0.9) !important;
+  }
+  .video-js .vjs-play-progress,
+  .video-js .vjs-volume-level {
+    background: var(--accent) !important;
+  }
+  .video-js .vjs-big-play-button {
+    background: rgba(124,58,237,0.7) !important;
+    border: none !important;
+    border-radius: 50% !important;
+    width: 56px !important;
+    height: 56px !important;
+    line-height: 56px !important;
+    font-size: 1.6rem !important;
+    left: 50% !important;
+    top: 50% !important;
+    transform: translate(-50%, -50%) !important;
+  }
+  .video-js:hover .vjs-big-play-button {
+    background: rgba(124,58,237,0.9) !important;
+  }
+  .proxy-empty {
+    color: var(--muted);
+    font-size: 0.78rem;
+    padding: 12px 0;
+    text-align: center;
+  }
+
   @media (max-width:480px) {
     .xp-section { flex-wrap: wrap; }
     .xp-level { min-width: auto; }
     body { padding: 12px; }
   }
 </style>
+<!-- Video.js CDN -->
+<link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet">
+<script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
 </head>
 <body>
 
@@ -262,6 +346,20 @@
 <div class="section-box" id="achievements-section" style="display:none">
   <div class="section-title">🏆 Achievements</div>
   <div class="achievements" id="achievements"></div>
+</div>
+
+<!-- Playback -->
+<div class="playback-section">
+  <div class="section-title">▶ Playback — Proxies</div>
+  <div class="player-wrap" id="player-wrap">
+    <video id="proxy-player" class="video-js vjs-fluid" controls preload="metadata"
+           style="width:100%;border-radius:8px;">
+    </video>
+  </div>
+  <div id="now-playing" style="font-size:0.72rem;color:var(--accent);margin-top:6px;display:none"></div>
+  <div class="proxy-list" id="proxy-list">
+    <div class="proxy-empty">Chargement des proxies...</div>
+  </div>
 </div>
 
 <script>
@@ -533,6 +631,71 @@ async function update() {
 
 update();
 setInterval(update, 4000);
+
+// ── Proxy Playback ──
+let vjsPlayer = null;
+let activeProxyName = null;
+
+function initPlayer() {
+  if (vjsPlayer) return;
+  try {
+    vjsPlayer = videojs("proxy-player", {
+      controls: true,
+      preload: "metadata",
+      fluid: true,
+    });
+  } catch(e) {
+    console.warn("Video.js init failed:", e);
+  }
+}
+
+function playProxy(clip) {
+  initPlayer();
+  if (!vjsPlayer) return;
+  const wrap = document.getElementById("player-wrap");
+  const info = document.getElementById("now-playing");
+  wrap.classList.add("visible");
+  info.style.display = "block";
+  info.textContent = "En lecture : " + clip.name;
+  activeProxyName = clip.name;
+
+  vjsPlayer.src({ type: "video/mp4", src: clip.path });
+  vjsPlayer.play().catch(() => {});
+
+  // Highlight active item
+  document.querySelectorAll(".proxy-item").forEach(item => {
+    item.classList.toggle("active", item.dataset.name === clip.name);
+  });
+}
+
+async function loadProxies() {
+  try {
+    const res = await fetch("/api/proxies");
+    if (!res.ok) return;
+    const data = await res.json();
+    const list = document.getElementById("proxy-list");
+    list.innerHTML = "";
+
+    if (data.clips.length === 0) {
+      list.innerHTML = '<div class="proxy-empty">Aucun proxy disponible dans /tmp/backup_proxies/</div>';
+      return;
+    }
+
+    data.clips.forEach(clip => {
+      const item = el("div", "proxy-item" + (clip.name === activeProxyName ? " active" : ""));
+      item.dataset.name = clip.name;
+      item.appendChild(el("span", "proxy-item-name", clip.name));
+      item.appendChild(el("span", "proxy-item-size", clip.size_mb + " MB"));
+      item.addEventListener("click", () => playProxy(clip));
+      list.appendChild(item);
+    });
+  } catch(e) {
+    // silencieux
+  }
+}
+
+loadProxies();
+setInterval(loadProxies, 10000);
 </script>
 </body>
 </html>
