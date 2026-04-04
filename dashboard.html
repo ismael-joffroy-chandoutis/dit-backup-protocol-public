@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Backup Dashboard</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --border: #1e1e2e;
+    --accent: #7c3aed;
+    --green: #10b981;
+    --red: #ef4444;
+    --yellow: #f59e0b;
+    --blue: #3b82f6;
+    --text: #e2e8f0;
+    --muted: #64748b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    min-height: 100vh;
+    padding: 20px;
+    max-width: 700px;
+    margin: 0 auto;
+  }
+
+  /* ── Error banner ── */
+  #error-banner {
+    display: none;
+    background: rgba(239,68,68,0.15);
+    border: 1px solid var(--red);
+    border-radius: 8px;
+    padding: 10px 16px;
+    color: var(--red);
+    font-size: 0.8rem;
+    text-align: center;
+    margin-bottom: 16px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    animation: pulse-border 1.5s infinite;
+  }
+  @keyframes pulse-border { 0%,100% { border-color: var(--red); } 50% { border-color: transparent; } }
+
+  /* ── Header ── */
+  header {
+    text-align: center;
+    margin-bottom: 24px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: clamp(1.1rem, 4vw, 1.6rem); letter-spacing: 0.18em; text-transform: uppercase; }
+  .session-name { color: var(--accent); font-size: 0.85rem; margin-top: 6px; letter-spacing: 0.1em; }
+  .timestamp { color: var(--muted); font-size: 0.7rem; margin-top: 4px; }
+
+  /* ── XP bar ── */
+  .xp-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 18px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .xp-level { font-size: 0.75rem; color: var(--accent); font-weight: bold; letter-spacing: 0.05em; min-width: 120px; text-transform: uppercase; }
+  .xp-bar-wrap { flex: 1; }
+  .xp-bar-bg { background: var(--border); border-radius: 99px; height: 7px; overflow: hidden; }
+  .xp-bar-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), #a855f7); transition: width 1s ease; }
+  .xp-label { font-size: 0.68rem; color: var(--muted); margin-top: 3px; display: flex; justify-content: space-between; }
+  .xp-total { font-size: 1rem; font-weight: bold; color: var(--text); min-width: 72px; text-align: right; }
+
+  /* ── Disk gauges ── */
+  .disks-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .disk-card {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+  }
+  .disk-label { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
+  .disk-bar-bg { background: var(--border); border-radius: 99px; height: 5px; overflow: hidden; margin-bottom: 4px; }
+  .disk-bar-fill { height: 100%; border-radius: 99px; background: var(--green); transition: width 0.8s; }
+  .disk-bar-fill.warn  { background: var(--yellow); }
+  .disk-bar-fill.crit  { background: var(--red); }
+  .disk-info { font-size: 0.7rem; color: var(--muted); display: flex; justify-content: space-between; }
+  .disk-free { color: var(--text); }
+
+  /* ── Transfer cards ── */
+  .transfers { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+  .transfer-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    transition: border-color 0.3s;
+  }
+  .transfer-card.active { border-color: var(--blue); }
+  .transfer-card.done   { border-color: var(--green); }
+  .transfer-card.error  { border-color: var(--red); }
+
+  .transfer-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .transfer-label { font-size: 0.9rem; font-weight: bold; letter-spacing: 0.04em; }
+  .transfer-dest { font-size: 0.75rem; color: var(--muted); background: var(--border); padding: 2px 7px; border-radius: 4px; margin-left: 7px; }
+  .transfer-files { font-size: 0.68rem; color: var(--muted); margin-left: 7px; }
+  .transfer-badges { display: flex; align-items: center; gap: 6px; }
+
+  .badge { font-size: 0.68rem; padding: 2px 9px; border-radius: 99px; font-weight: bold; letter-spacing: 0.07em; text-transform: uppercase; }
+  .badge-active    { background: rgba(59,130,246,0.15); color: var(--blue); }
+  .badge-done      { background: rgba(16,185,129,0.15); color: var(--green); }
+  .badge-waiting   { background: rgba(100,116,139,0.15); color: var(--muted); }
+  .badge-error     { background: rgba(239,68,68,0.15); color: var(--red); }
+  .badge-bitperfect{ background: rgba(16,185,129,0.2); color: var(--green); font-weight: bold; }
+
+  .progress-bg { background: var(--border); border-radius: 99px; height: 8px; overflow: hidden; margin-bottom: 6px; }
+  .progress-fill { height: 100%; border-radius: 99px; transition: width 0.8s ease; }
+  .progress-fill.active  { background: linear-gradient(90deg, var(--blue), #60a5fa); animation: shimmer 1.5s infinite; }
+  .progress-fill.done    { background: var(--green); }
+  .progress-fill.waiting { background: var(--muted); width: 0 !important; }
+  @keyframes shimmer { 0%,100% { opacity:1; } 50% { opacity:0.7; } }
+
+  .transfer-meta { display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--muted); }
+
+  /* ── Hash / verification ── */
+  .section-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 14px;
+  }
+  .section-title { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 10px; }
+  .hash-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 0.82rem; }
+  .hash-row:last-child { border-bottom: none; }
+  .hash-ok      { color: var(--green); font-weight: bold; }
+  .hash-pending { color: var(--muted); }
+
+  /* ── Hash cards (like transfers) ── */
+  .hash-cards { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+  .hash-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    transition: border-color 0.3s;
+  }
+  .hash-card.active { border-color: var(--accent); }
+  .hash-card.done   { border-color: var(--green); }
+  .hash-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; }
+  .hash-card-label { font-size: 0.82rem; font-weight: bold; }
+  .hash-card-machine { font-size: 0.65rem; color: var(--muted); background: var(--border); padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
+  .hash-progress-bg { background: var(--border); border-radius: 99px; height: 5px; overflow: hidden; margin-bottom: 5px; }
+  .hash-progress-fill { height: 100%; border-radius: 99px; transition: width 0.8s ease; }
+  .hash-progress-fill.active { background: linear-gradient(90deg, var(--accent), #a855f7); animation: shimmer 1.5s infinite; }
+  .hash-progress-fill.done   { background: var(--green); }
+  .hash-progress-fill.waiting { width: 0 !important; background: var(--muted); }
+  .hash-card-meta { display: flex; justify-content: space-between; font-size: 0.65rem; color: var(--muted); }
+
+  /* ── Achievements ── */
+  .achievements { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+  .achievement {
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    border-radius: 7px;
+    padding: 5px 12px;
+    font-size: 0.72rem;
+    color: var(--accent);
+    font-weight: bold;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    animation: pop 0.4s ease;
+  }
+  @keyframes pop { 0% { transform:scale(0.8); opacity:0; } 70% { transform:scale(1.1); } 100% { transform:scale(1); opacity:1; } }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-120px);
+    background: linear-gradient(135deg, var(--accent), #a855f7);
+    color: white;
+    padding: 12px 24px;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: bold;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    z-index: 1000;
+    transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+    box-shadow: 0 8px 32px rgba(124,58,237,0.4);
+    pointer-events: none;
+  }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+
+  .flash-green { animation: flashG 1s ease; }
+  .flash-red   { animation: flashR 1s ease; }
+  @keyframes flashG { 0%,100% { background:var(--surface); } 50% { background:rgba(16,185,129,0.12); } }
+  @keyframes flashR { 0%,100% { background:var(--surface); } 50% { background:rgba(239,68,68,0.12); } }
+
+  @media (max-width:480px) {
+    .xp-section { flex-wrap: wrap; }
+    .xp-level { min-width: auto; }
+    body { padding: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="toast"></div>
+<div id="error-banner">⚠ MONITORING DÉCONNECTÉ — relancer server.py</div>
+
+<header>
+  <div style="font-size:1.8rem;margin-bottom:6px">🎬</div>
+  <h1>BACKUP SESSION</h1>
+  <div class="session-name" id="session-name">Chargement...</div>
+  <div class="timestamp" id="timestamp">—</div>
+</header>
+
+<!-- XP -->
+<div class="xp-section">
+  <div class="xp-level" id="xp-level">—</div>
+  <div class="xp-bar-wrap">
+    <div class="xp-bar-bg"><div class="xp-bar-fill" id="xp-bar" style="width:0%"></div></div>
+    <div class="xp-label">
+      <span id="xp-gb">0 GB</span>
+      <span id="xp-next">— XP to next level</span>
+    </div>
+  </div>
+  <div class="xp-total" id="xp-total">0 XP</div>
+</div>
+
+<!-- Disk gauges -->
+<div class="disks-row" id="disks-row"></div>
+
+<!-- Transfer cards -->
+<div class="transfers" id="transfers"></div>
+
+<!-- Hashing cards -->
+<div style="font-size:0.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:8px">🔐 Hashing xxhsum128</div>
+<div class="hash-cards" id="hash-cards"></div>
+
+<!-- Bit-perfect results -->
+<div class="section-box">
+  <div class="section-title">✅ Vérifications bit-perfect</div>
+  <div id="hash-rows"></div>
+</div>
+
+<!-- Achievements -->
+<div class="section-box" id="achievements-section" style="display:none">
+  <div class="section-title">🏆 Achievements</div>
+  <div class="achievements" id="achievements"></div>
+</div>
+
+<script>
+const ACHIEVEMENT_LABELS = {
+  "BIT-PERFECT":   "🔐 Bit-Perfect",
+  "NAV1_COMPLETE": "💾 Nav1 Complete",
+  "DOUBLE_BACKUP": "✌️ Double Backup",
+  "TRIPLE_LOCK":   "🔒 Triple Lock",
+};
+const STATUS_LABELS = { active:"En cours", done:"✓ Complet", waiting:"En attente", error:"Erreur" };
+const STATUS_BADGE  = { active:"badge-active", done:"badge-done", waiting:"badge-waiting", error:"badge-error" };
+
+let prevAchievements = [];
+let prevStatuses = {};
+let errorCount = 0;
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function playTone(freqs, type="sine", vol=0.28, gap=0.12) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    freqs.forEach((f, i) => {
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = f; osc.type = type;
+      gain.gain.setValueAtTime(vol, ctx.currentTime + i * gap);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * gap + 0.3);
+      osc.start(ctx.currentTime + i * gap);
+      osc.stop(ctx.currentTime + i * gap + 0.35);
+    });
+  } catch(e) {}
+}
+function playSuccess()    { playTone([523.25, 659.25, 783.99, 1046.50]); }
+function playBitPerfect() { playTone([783.99, 1046.50, 1318.51], "triangle", 0.38, 0.15); }
+
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 3500);
+}
+
+function renderDisk(id, label, info) {
+  let card = document.getElementById("disk-" + id);
+  if (!card) {
+    card = el("div", "disk-card");
+    card.id = "disk-" + id;
+    document.getElementById("disks-row").appendChild(card);
+  }
+  card.innerHTML = "";
+  const lbl = el("div", "disk-label", label);
+  card.appendChild(lbl);
+  if (!info) {
+    card.appendChild(el("div", "disk-info", "Non monté"));
+    return;
+  }
+  const barBg = el("div", "disk-bar-bg");
+  const fill = el("div", "disk-bar-fill" + (info.percent > 90 ? " crit" : info.percent > 75 ? " warn" : ""));
+  fill.style.width = info.percent + "%";
+  barBg.appendChild(fill);
+  card.appendChild(barBg);
+  const inf = el("div", "disk-info");
+  inf.appendChild(el("span", "disk-free", info.free_gb + " GB libres"));
+  inf.appendChild(el("span", null, info.total_gb + " GB total"));
+  card.appendChild(inf);
+}
+
+function buildTransferCard(t, i) {
+  const card = el("div", "transfer-card " + t.status);
+  card.id = "transfer-" + i;
+
+  const header = el("div", "transfer-header");
+  const left = el("div");
+  left.appendChild(el("span", "transfer-label", t.label));
+  left.appendChild(el("span", "transfer-dest", t.dest));
+  if (t.machine) left.appendChild(el("span", "transfer-files", "@ " + t.machine));
+  if (t.files)   left.appendChild(el("span", "transfer-files", t.files));
+  header.appendChild(left);
+
+  const badges = el("div", "transfer-badges");
+  if (t.bitperfect) badges.appendChild(el("span", "badge badge-bitperfect", "🔐 BIT-PERFECT"));
+  if (t.status === "done" && !t.bitperfect) badges.appendChild(el("span", "badge badge-done", "✓ COMPLET"));
+  else if (t.status !== "done") badges.appendChild(el("span", "badge " + (STATUS_BADGE[t.status] || "badge-waiting"), STATUS_LABELS[t.status] || t.status));
+  header.appendChild(badges);
+  card.appendChild(header);
+
+  const bg = el("div", "progress-bg");
+  const fill = el("div", "progress-fill " + t.status);
+  fill.style.width = (t.status === "waiting" ? "0" : (t.percent || 0)) + "%";
+  bg.appendChild(fill);
+  card.appendChild(bg);
+
+  const meta = el("div", "transfer-meta");
+  meta.appendChild(el("span", null, (t.percent || 0) + "%"));
+  meta.appendChild(el("span", null, t.speed && t.speed !== "—" ? "⚡ " + t.speed : ""));
+  meta.appendChild(el("span", null, t.eta && t.eta !== "—" && t.status === "active" ? "⏱ " + t.eta : ""));
+  card.appendChild(meta);
+  return card;
+}
+
+function buildHashCard(h, i) {
+  const card = el("div", "hash-card " + h.status);
+  card.id = "hash-card-" + i;
+
+  const header = el("div", "hash-card-header");
+  const left = el("div");
+  left.appendChild(el("span", "hash-card-label", h.label));
+  if (h.machine) left.appendChild(el("span", "hash-card-machine", h.machine));
+  header.appendChild(left);
+
+  const right = el("div", "transfer-badges");
+  const txt = h.status === "done"    ? "✅ " + h.done + "/" + h.total
+            : h.status === "active"  ? "⚙️ " + h.done + "/" + h.total
+            : "⏳ En attente";
+  const cls = h.status === "done" ? "hash-ok" : "hash-pending";
+  right.appendChild(el("span", cls, txt));
+  header.appendChild(right);
+  card.appendChild(header);
+
+  const bg = el("div", "hash-progress-bg");
+  const fill = el("div", "hash-progress-fill " + h.status);
+  fill.style.width = (h.status === "done" ? 100 : (h.percent || 0)) + "%";
+  bg.appendChild(fill);
+  card.appendChild(bg);
+
+  const meta = el("div", "hash-card-meta");
+  meta.appendChild(el("span", null, h.status === "active" ? (h.percent || 0) + "%" : ""));
+  meta.appendChild(el("span", null, h.speed && h.speed !== "—" ? "⚡ " + h.speed : ""));
+  meta.appendChild(el("span", null, h.eta && h.eta !== "—" && h.status === "active" ? "⏱ " + h.eta : ""));
+  card.appendChild(meta);
+  return card;
+}
+
+function buildHashRow(label, ok) {
+  const row = el("div", "hash-row");
+  row.appendChild(el("span", null, label));
+  row.appendChild(el("span", ok ? "hash-ok" : "hash-pending", ok ? "✅ BIT-PERFECT" : "⏳ En attente"));
+  return row;
+}
+
+async function update() {
+  try {
+    const res = await fetch("/api/status");
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+
+    // Reset error state
+    if (errorCount > 0) {
+      errorCount = 0;
+      document.getElementById("error-banner").style.display = "none";
+    }
+
+    document.getElementById("session-name").textContent = data.session;
+    document.getElementById("timestamp").textContent = "Mis à jour : " + data.timestamp;
+
+    // XP
+    const xp = data.xp;
+    document.getElementById("xp-level").textContent = xp.level;
+    document.getElementById("xp-total").textContent = xp.total.toLocaleString() + " XP";
+    document.getElementById("xp-gb").textContent = xp.gb_backed + " GB backed up";
+    if (xp.next_level_xp) {
+      document.getElementById("xp-bar").style.width = Math.min(100, (xp.total / xp.next_level_xp) * 100) + "%";
+      document.getElementById("xp-next").textContent = (xp.next_level_xp - xp.total).toLocaleString() + " XP to next level";
+    } else {
+      document.getElementById("xp-bar").style.width = "100%";
+      document.getElementById("xp-next").textContent = "MAX LEVEL 🌟";
+    }
+
+    // Disk space
+    if (data.disks) {
+      renderDisk("nav1", "💾 Nav1 (MacBook)", data.disks.nav1);
+      renderDisk("nav2", "💾 Nav2 (Nomad)", data.disks.nav2);
+    }
+
+    // Transfers
+    const container = document.getElementById("transfers");
+    data.transfers.forEach((t, i) => {
+      const existing = document.getElementById("transfer-" + i);
+      const newCard = buildTransferCard(t, i);
+      const prev = prevStatuses[i];
+      if (prev && prev !== t.status) {
+        if (t.status === "done") { newCard.classList.add("flash-green"); playSuccess(); }
+        if (t.status === "error") newCard.classList.add("flash-red");
+      }
+      if (existing) container.replaceChild(newCard, existing);
+      else container.appendChild(newCard);
+      prevStatuses[i] = t.status;
+    });
+
+    // Hashing cards
+    const hashCardsEl = document.getElementById("hash-cards");
+    (data.hashing || []).forEach((h, i) => {
+      const existing = document.getElementById("hash-card-" + i);
+      const newCard = buildHashCard(h, i);
+      if (existing) hashCardsEl.replaceChild(newCard, existing);
+      else hashCardsEl.appendChild(newCard);
+    });
+
+    // Bit-perfect results
+    const hashRows = document.getElementById("hash-rows");
+    hashRows.innerHTML = "";
+    hashRows.appendChild(buildHashRow("A020 BRAW → Nav1", data.hash.a020_nav1));
+    hashRows.appendChild(buildHashRow("iPhone 2TB → Nav1", data.hash.iphone_nav1));
+    hashRows.appendChild(buildHashRow("A015 BRAW → Nav2", data.hash.a015_nav2));
+
+    // Achievements
+    const newAch = data.achievements.filter(a => !prevAchievements.includes(a));
+    newAch.forEach(a => {
+      showToast("🏆 " + (ACHIEVEMENT_LABELS[a] || a) + " UNLOCKED");
+      if (a === "BIT-PERFECT") playBitPerfect(); else playSuccess();
+    });
+    if (newAch.length) prevAchievements = [...data.achievements];
+
+    const achSection = document.getElementById("achievements-section");
+    const achContainer = document.getElementById("achievements");
+    if (data.achievements.length > 0) {
+      achSection.style.display = "block";
+      achContainer.innerHTML = "";
+      data.achievements.forEach(a => achContainer.appendChild(el("div", "achievement", ACHIEVEMENT_LABELS[a] || a)));
+    }
+
+  } catch(e) {
+    errorCount++;
+    if (errorCount >= 2) {
+      document.getElementById("error-banner").style.display = "block";
+    }
+  }
+}
+
+update();
+setInterval(update, 4000);
+</script>
+</body>
+</html>
