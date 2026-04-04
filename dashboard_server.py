@@ -11,6 +11,7 @@ from urllib.parse import urlparse, parse_qs
 _ssh_cache: dict = {}
 
 XP_FILE = "/tmp/backup_dashboard/xp.json"
+ANNOTATIONS_FILE = "/tmp/backup_dashboard/annotations.json"
 PROXY_DIR = "/tmp/backup_proxies"
 
 LEVELS = [
@@ -49,6 +50,21 @@ def save_xp(data):
     with open(tmp, "w") as f:
         json.dump(data, f)
     os.replace(tmp, XP_FILE)
+
+def load_annotations():
+    if os.path.exists(ANNOTATIONS_FILE):
+        try:
+            with open(ANNOTATIONS_FILE) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return []
+
+def save_annotations(data):
+    tmp = ANNOTATIONS_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, ANNOTATIONS_FILE)
 
 def parse_rsync_log(path):
     """Progression rsync globale via to-chk=X/Y (fichiers restants).
@@ -665,7 +681,8 @@ def get_status():
     hash_iphone_nav1 = get_hash_progress("/tmp/iPhone_nav1_xxh128.txt", 80)
     hash_a015_nav2   = get_hash_progress("/tmp/A015_nav2_xxh128.txt", 33, running_fn=rclone_hashsum_running)
     hash_a020_nav2   = get_hash_progress("/tmp/A020_nav2_xxh128.txt", 25, running_fn=rclone_hashsum_running)
-    hash_iphone_nav2 = get_hash_progress("/tmp/iPhone_nav2_xxh128.txt", 80, running_fn=rclone_hashsum_running)
+    # iPhone Nav2 : 622 fichiers total (80 MOV + 542 proxies/metadata)
+    hash_iphone_nav2 = get_hash_progress("/tmp/iPhone_nav2_xxh128.txt", 622, running_fn=rclone_hashsum_running)
     hash_h8_src      = get_hash_progress("/tmp/H8_source_xxh128.txt", 77)
     hash_h8_nav1     = get_hash_progress("/tmp/H8_nav1_xxh128.txt", 77)
     hash_h8_nav2     = get_hash_progress("/tmp/H8_nav2_xxh128.txt", 77, running_fn=rclone_hashsum_running)
@@ -1026,6 +1043,28 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 self._json_response({"error": str(e)}, 500)
 
+        elif path == "/api/luts":
+            try:
+                from lut_preview import list_luts
+                self._json_response({"luts": list_luts()})
+            except Exception as e:
+                self._json_response({"error": str(e)}, 500)
+
+        elif path == "/api/lut":
+            filepath = qs.get("file", [None])[0]
+            if not filepath:
+                self._json_response({"error": "?file= requis"}, 400)
+                return
+            try:
+                from lut_preview import parse_lut
+                result = parse_lut(filepath)
+                if "error" in result:
+                    self._json_response(result, 400)
+                else:
+                    self._json_response(result)
+            except Exception as e:
+                self._json_response({"error": str(e)}, 500)
+
         elif path.startswith("/proxy-files/"):
             # Servir les fichiers proxy directement
             filename = path.replace("/proxy-files/", "")
@@ -1040,6 +1079,28 @@ class Handler(SimpleHTTPRequestHandler):
                     shutil.copyfileobj(f, self.wfile)
             else:
                 self.send_error(404)
+
+        elif path == "/api/report":
+            try:
+                from generate_report import generate_report_html
+                body = generate_report_html().encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", len(body))
+                self.end_headers()
+                self.wfile.write(body)
+            except Exception as e:
+                self._json_response({"error": str(e)}, 500)
+
+        elif path == "/api/annotations":
+            try:
+                clip_filter = qs.get("clip", [None])[0]
+                annotations = load_annotations()
+                if clip_filter:
+                    annotations = [a for a in annotations if a.get("clip") == clip_filter]
+                self._json_response({"annotations": annotations, "count": len(annotations)})
+            except Exception as e:
+                self._json_response({"error": str(e)}, 500)
 
         else:
             super().do_GET()
@@ -1082,6 +1143,40 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json_response({"error": "MHL generation timed out (10 min limit)"}, 504)
             except Exception as e:
                 self._json_response({"error": str(e)}, 500)
+        elif path == "/api/annotate":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(content_length) if content_length > 0 else b"{}"
+                params = json.loads(body)
+                clip = params.get("clip", "").strip()
+                note = params.get("note", "").strip()
+                rating = params.get("rating", 0)
+                tags = params.get("tags", [])
+                if not clip:
+                    self._json_response({"error": "clip field is required"}, 400)
+                    return
+                # Validate rating 0-5
+                try:
+                    rating = max(0, min(5, int(rating)))
+                except (ValueError, TypeError):
+                    rating = 0
+                # Validate tags
+                VALID_TAGS = {"selects", "vfx", "audio", "reshoot", "circled"}
+                tags = [t for t in tags if t in VALID_TAGS]
+                annotation = {
+                    "clip": clip,
+                    "note": note,
+                    "rating": rating,
+                    "tags": tags,
+                    "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                }
+                annotations = load_annotations()
+                annotations.append(annotation)
+                save_annotations(annotations)
+                self._json_response({"status": "ok", "annotation": annotation})
+            except Exception as e:
+                self._json_response({"error": str(e)}, 500)
+
         else:
             self._json_response({"error": "Not found"}, 404)
 

@@ -288,6 +288,157 @@
     text-align: center;
   }
 
+  /* ── LUT selector ── */
+  .lut-selector-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .lut-selector-label {
+    font-size: 0.68rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+  }
+  .lut-select {
+    flex: 1;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.78rem;
+    font-family: inherit;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .lut-select:hover,
+  .lut-select:focus { border-color: var(--accent); }
+  .lut-select option { background: var(--bg); color: var(--text); }
+  .lut-indicator {
+    font-size: 0.65rem;
+    color: var(--accent);
+    letter-spacing: 0.04em;
+    display: none;
+  }
+  .lut-indicator.visible { display: inline; }
+
+  /* WebGL canvas overlay for LUT */
+  .lut-canvas-wrap {
+    position: relative;
+    margin-top: 12px;
+    border-radius: 8px;
+    overflow: hidden;
+    display: none;
+  }
+  .lut-canvas-wrap.visible { display: block; }
+  .lut-canvas-wrap canvas {
+    display: block;
+    width: 100%;
+    border-radius: 8px;
+  }
+
+  /* ── Annotations ── */
+  .annot-form {
+    margin-bottom: 12px;
+  }
+  .annot-star {
+    font-size: 1.2rem;
+    color: var(--muted);
+    cursor: pointer;
+    transition: color 0.15s;
+    user-select: none;
+  }
+  .annot-star.filled { color: var(--yellow); }
+  .annot-star:hover { color: var(--yellow); }
+  .annot-tag-check {
+    font-size: 0.72rem;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .annot-tag-check input[type="checkbox"] {
+    accent-color: var(--accent);
+  }
+  .annot-btn {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 6px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: bold;
+    transition: opacity 0.2s;
+  }
+  .annot-btn:hover { opacity: 0.85; }
+  .annot-btn:disabled { opacity: 0.4; cursor: default; }
+  .annot-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 300px;
+    overflow-y: auto;
+  }
+  .annot-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+  }
+  .annot-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+  .annot-item-clip {
+    font-weight: bold;
+    font-size: 0.82rem;
+    color: var(--text);
+  }
+  .annot-item-date {
+    font-size: 0.65rem;
+    color: var(--muted);
+  }
+  .annot-item-stars {
+    font-size: 0.9rem;
+    color: var(--yellow);
+    margin-bottom: 4px;
+  }
+  .annot-item-note {
+    font-size: 0.78rem;
+    color: var(--text);
+    margin-bottom: 6px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+  }
+  .annot-item-tags {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .annot-tag {
+    font-size: 0.65rem;
+    padding: 1px 7px;
+    border-radius: 99px;
+    background: rgba(124,58,237,0.12);
+    color: var(--accent);
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
   @media (max-width:480px) {
     .xp-section { flex-wrap: wrap; }
     .xp-level { min-width: auto; }
@@ -351,15 +502,63 @@
 <!-- Playback -->
 <div class="playback-section">
   <div class="section-title">▶ Playback — Proxies</div>
+  <div class="lut-selector-row">
+    <span class="lut-selector-label">LUT</span>
+    <select class="lut-select" id="lut-select">
+      <option value="none">No LUT</option>
+      <optgroup label="Presets">
+        <option value="preset:rec709">Rec709 (Log to Rec709)</option>
+        <option value="preset:highcontrast">High Contrast</option>
+        <option value="preset:filmlook">Film Look</option>
+        <option value="preset:logflat">Log (Flat)</option>
+      </optgroup>
+      <optgroup label=".cube Files" id="lut-cube-group"></optgroup>
+    </select>
+    <span class="lut-indicator" id="lut-indicator">LUT active</span>
+  </div>
   <div class="player-wrap" id="player-wrap">
     <video id="proxy-player" class="video-js vjs-fluid" controls preload="metadata"
            style="width:100%;border-radius:8px;">
     </video>
   </div>
+  <div class="lut-canvas-wrap" id="lut-canvas-wrap">
+    <canvas id="lut-canvas"></canvas>
+  </div>
   <div id="now-playing" style="font-size:0.72rem;color:var(--accent);margin-top:6px;display:none"></div>
   <div class="proxy-list" id="proxy-list">
     <div class="proxy-empty">Chargement des proxies...</div>
   </div>
+</div>
+
+<!-- Annotations -->
+<div class="section-box" id="annotations-section">
+  <div class="section-title">📝 Clip Annotations</div>
+  <div class="annot-form" id="annot-form">
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <select id="annot-clip" style="flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-family:inherit;font-size:0.78rem;">
+        <option value="">-- Select clip --</option>
+      </select>
+      <div id="annot-rating" style="display:flex;gap:2px;align-items:center;cursor:pointer;">
+        <span class="annot-star" data-val="1">&#9734;</span>
+        <span class="annot-star" data-val="2">&#9734;</span>
+        <span class="annot-star" data-val="3">&#9734;</span>
+        <span class="annot-star" data-val="4">&#9734;</span>
+        <span class="annot-star" data-val="5">&#9734;</span>
+      </div>
+    </div>
+    <textarea id="annot-note" rows="2" placeholder="Notes on this clip..." style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-family:inherit;font-size:0.78rem;resize:vertical;margin-bottom:8px;"></textarea>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+      <div class="annot-tags" id="annot-tags" style="display:flex;gap:6px;flex-wrap:wrap;">
+        <label class="annot-tag-check"><input type="checkbox" value="selects"> selects</label>
+        <label class="annot-tag-check"><input type="checkbox" value="vfx"> vfx</label>
+        <label class="annot-tag-check"><input type="checkbox" value="audio"> audio</label>
+        <label class="annot-tag-check"><input type="checkbox" value="reshoot"> reshoot</label>
+        <label class="annot-tag-check"><input type="checkbox" value="circled"> circled</label>
+      </div>
+      <button id="annot-submit" class="annot-btn">Submit</button>
+    </div>
+  </div>
+  <div class="annot-list" id="annot-list"></div>
 </div>
 
 <script>
@@ -696,6 +895,492 @@ async function loadProxies() {
 
 loadProxies();
 setInterval(loadProxies, 10000);
+
+// ── LUT Preview ──
+const LUT_PRESETS = {
+  "preset:rec709":       { brightness: 1.15, contrast: 1.25, saturate: 1.15 },
+  "preset:highcontrast": { brightness: 1.05, contrast: 1.55, saturate: 1.2 },
+  "preset:filmlook":     { brightness: 0.95, contrast: 1.20, saturate: 0.85 },
+  "preset:logflat":      { brightness: 1.0,  contrast: 0.75, saturate: 0.6 },
+};
+
+let lutGLContext = null;
+let lutGLProgram = null;
+let lutTexture3D = null;
+let lutAnimFrame = null;
+let currentLutMode = "none"; // "none", "preset:xxx", or "cube:path"
+let lutCubeData = null;      // Parsed 3D LUT data for WebGL
+
+function applyPresetCSS(presetKey) {
+  const videoEl = document.querySelector("#proxy-player video, #proxy-player_html5_api");
+  if (!videoEl) return;
+  if (presetKey === "none" || !LUT_PRESETS[presetKey]) {
+    videoEl.style.filter = "";
+    return;
+  }
+  const p = LUT_PRESETS[presetKey];
+  videoEl.style.filter = `brightness(${p.brightness}) contrast(${p.contrast}) saturate(${p.saturate})`;
+}
+
+// WebGL 3D LUT shader
+const LUT_VERT = `
+  attribute vec2 a_pos;
+  attribute vec2 a_tex;
+  varying vec2 v_tex;
+  void main() {
+    gl_Position = vec4(a_pos, 0.0, 1.0);
+    v_tex = a_tex;
+  }
+`;
+
+const LUT_FRAG = `
+  precision mediump float;
+  uniform sampler2D u_video;
+  uniform sampler2D u_lut;
+  uniform float u_lutSize;
+  uniform bool u_useLut;
+  varying vec2 v_tex;
+
+  vec3 applyLut3D(vec3 color) {
+    float s = u_lutSize;
+    float sliceSize = 1.0 / s;
+    float slicePixelSize = sliceSize / s;
+    float sliceInnerSize = slicePixelSize * (s - 1.0);
+
+    float blueSlice0 = floor(color.b * (s - 1.0));
+    float blueSlice1 = min(blueSlice0 + 1.0, s - 1.0);
+    float blueFract = color.b * (s - 1.0) - blueSlice0;
+
+    vec2 uv0 = vec2(
+      blueSlice0 * sliceSize + slicePixelSize * 0.5 + color.r * sliceInnerSize,
+      slicePixelSize * 0.5 + color.g * sliceInnerSize
+    );
+    vec2 uv1 = vec2(
+      blueSlice1 * sliceSize + slicePixelSize * 0.5 + color.r * sliceInnerSize,
+      slicePixelSize * 0.5 + color.g * sliceInnerSize
+    );
+
+    vec3 c0 = texture2D(u_lut, uv0).rgb;
+    vec3 c1 = texture2D(u_lut, uv1).rgb;
+    return mix(c0, c1, blueFract);
+  }
+
+  void main() {
+    vec4 color = texture2D(u_video, v_tex);
+    if (u_useLut) {
+      gl_FragColor = vec4(applyLut3D(clamp(color.rgb, 0.0, 1.0)), color.a);
+    } else {
+      gl_FragColor = color;
+    }
+  }
+`;
+
+function initLutGL() {
+  if (lutGLContext) return true;
+  const canvas = document.getElementById("lut-canvas");
+  if (!canvas) return false;
+  const gl = canvas.getContext("webgl", { premultipliedAlpha: false, preserveDrawingBuffer: false });
+  if (!gl) return false;
+
+  // Compile shaders
+  function compile(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+      console.warn("LUT shader error:", gl.getShaderInfoLog(s));
+      return null;
+    }
+    return s;
+  }
+  const vs = compile(gl.VERTEX_SHADER, LUT_VERT);
+  const fs = compile(gl.FRAGMENT_SHADER, LUT_FRAG);
+  if (!vs || !fs) return false;
+
+  const prog = gl.createProgram();
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+    console.warn("LUT program link error:", gl.getProgramInfoLog(prog));
+    return false;
+  }
+
+  // Quad geometry
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  // pos(x,y) + tex(u,v) — full screen quad, flip Y for video
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    -1, -1,  0, 1,
+     1, -1,  1, 1,
+    -1,  1,  0, 0,
+     1,  1,  1, 0,
+  ]), gl.STATIC_DRAW);
+
+  const aPos = gl.getAttribLocation(prog, "a_pos");
+  const aTex = gl.getAttribLocation(prog, "a_tex");
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 16, 0);
+  gl.enableVertexAttribArray(aTex);
+  gl.vertexAttribPointer(aTex, 2, gl.FLOAT, false, 16, 8);
+
+  lutGLContext = gl;
+  lutGLProgram = prog;
+  return true;
+}
+
+function buildLutTexture(lutData, size) {
+  const gl = lutGLContext;
+  if (!gl) return null;
+
+  // Pack 3D LUT into a 2D texture: size*size columns x size rows
+  // Layout: blue slices side by side horizontally
+  const width = size * size;
+  const height = size;
+  const pixels = new Uint8Array(width * height * 4);
+
+  for (let b = 0; b < size; b++) {
+    for (let g = 0; g < size; g++) {
+      for (let r = 0; r < size; r++) {
+        const idx = b * size * size + g * size + r;
+        const px = b * size + r;
+        const py = g;
+        const offset = (py * width + px) * 4;
+        if (idx < lutData.length) {
+          pixels[offset]     = Math.round(Math.min(1, Math.max(0, lutData[idx][0])) * 255);
+          pixels[offset + 1] = Math.round(Math.min(1, Math.max(0, lutData[idx][1])) * 255);
+          pixels[offset + 2] = Math.round(Math.min(1, Math.max(0, lutData[idx][2])) * 255);
+          pixels[offset + 3] = 255;
+        }
+      }
+    }
+  }
+
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return tex;
+}
+
+function renderLutFrame() {
+  const gl = lutGLContext;
+  if (!gl || !lutGLProgram) return;
+
+  const videoEl = document.querySelector("#proxy-player video, #proxy-player_html5_api");
+  if (!videoEl || videoEl.paused && videoEl.currentTime === 0) {
+    lutAnimFrame = requestAnimationFrame(renderLutFrame);
+    return;
+  }
+
+  const canvas = document.getElementById("lut-canvas");
+  if (canvas.width !== videoEl.videoWidth || canvas.height !== videoEl.videoHeight) {
+    canvas.width = videoEl.videoWidth || 640;
+    canvas.height = videoEl.videoHeight || 360;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+  }
+
+  gl.useProgram(lutGLProgram);
+
+  // Upload video frame as texture unit 0
+  const videoTex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, videoTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoEl);
+  gl.uniform1i(gl.getUniformLocation(lutGLProgram, "u_video"), 0);
+
+  // LUT texture unit 1
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, lutTexture3D);
+  gl.uniform1i(gl.getUniformLocation(lutGLProgram, "u_lut"), 1);
+  gl.uniform1f(gl.getUniformLocation(lutGLProgram, "u_lutSize"), lutCubeData ? lutCubeData.size : 33.0);
+  gl.uniform1i(gl.getUniformLocation(lutGLProgram, "u_useLut"), lutTexture3D ? 1 : 0);
+
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+  // Clean up video texture each frame to avoid leak
+  gl.deleteTexture(videoTex);
+
+  lutAnimFrame = requestAnimationFrame(renderLutFrame);
+}
+
+function startLutRendering() {
+  if (lutAnimFrame) return;
+  const wrap = document.getElementById("lut-canvas-wrap");
+  wrap.classList.add("visible");
+  // Hide Video.js player, show canvas
+  document.getElementById("player-wrap").style.display = "none";
+  lutAnimFrame = requestAnimationFrame(renderLutFrame);
+}
+
+function stopLutRendering() {
+  if (lutAnimFrame) {
+    cancelAnimationFrame(lutAnimFrame);
+    lutAnimFrame = null;
+  }
+  document.getElementById("lut-canvas-wrap").classList.remove("visible");
+  document.getElementById("player-wrap").style.display = "";
+}
+
+async function loadCubeLut(filepath) {
+  try {
+    const res = await fetch("/api/lut?file=" + encodeURIComponent(filepath));
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.error) return null;
+    return data;
+  } catch(e) {
+    return null;
+  }
+}
+
+async function onLutChange() {
+  const select = document.getElementById("lut-select");
+  const val = select.value;
+  const indicator = document.getElementById("lut-indicator");
+  currentLutMode = val;
+
+  // Clear CSS filter
+  applyPresetCSS("none");
+
+  if (val === "none") {
+    indicator.classList.remove("visible");
+    stopLutRendering();
+    document.getElementById("player-wrap").classList.add("visible");
+    return;
+  }
+
+  if (val.startsWith("preset:")) {
+    // CSS filter mode
+    indicator.textContent = "CSS preset";
+    indicator.classList.add("visible");
+    stopLutRendering();
+    document.getElementById("player-wrap").classList.add("visible");
+    applyPresetCSS(val);
+    return;
+  }
+
+  if (val.startsWith("cube:")) {
+    const filepath = val.substring(5);
+    indicator.textContent = "Loading...";
+    indicator.classList.add("visible");
+
+    const data = await loadCubeLut(filepath);
+    if (!data || data.type === "unknown") {
+      indicator.textContent = "Parse error";
+      return;
+    }
+
+    if (!initLutGL()) {
+      // WebGL not available — fall back to a generic CSS approximation
+      indicator.textContent = "WebGL unavailable, CSS fallback";
+      applyPresetCSS("preset:rec709");
+      return;
+    }
+
+    lutCubeData = data;
+
+    // Build 3D LUT texture
+    if (lutTexture3D) {
+      lutGLContext.deleteTexture(lutTexture3D);
+      lutTexture3D = null;
+    }
+    lutTexture3D = buildLutTexture(data.data, data.size);
+    indicator.textContent = data.title + " (" + data.type + " " + data.size + ")";
+
+    // Start WebGL rendering loop
+    startLutRendering();
+  }
+}
+
+async function loadLuts() {
+  try {
+    const res = await fetch("/api/luts");
+    if (!res.ok) return;
+    const data = await res.json();
+    const group = document.getElementById("lut-cube-group");
+    group.innerHTML = "";
+    if (data.luts && data.luts.length > 0) {
+      data.luts.forEach(lut => {
+        const opt = document.createElement("option");
+        opt.value = "cube:" + lut.path;
+        opt.textContent = lut.name + " (" + lut.size_kb + " KB)";
+        group.appendChild(opt);
+      });
+    } else {
+      const opt = document.createElement("option");
+      opt.disabled = true;
+      opt.textContent = "No .cube files found";
+      group.appendChild(opt);
+    }
+  } catch(e) {}
+}
+
+document.getElementById("lut-select").addEventListener("change", onLutChange);
+loadLuts();
+// Refresh LUT file list every 30s (in case user adds files)
+setInterval(loadLuts, 30000);
+
+// Re-apply LUT when playing a new proxy
+const _originalPlayProxy = playProxy;
+playProxy = function(clip) {
+  _originalPlayProxy(clip);
+  // After starting playback, re-apply current LUT mode
+  setTimeout(() => {
+    if (currentLutMode !== "none") {
+      onLutChange();
+    }
+  }, 300);
+};
+
+// ── Annotations ──
+let annotRating = 0;
+
+function renderStars(val) {
+  document.querySelectorAll("#annot-rating .annot-star").forEach(s => {
+    s.classList.toggle("filled", parseInt(s.dataset.val) <= val);
+    s.innerHTML = parseInt(s.dataset.val) <= val ? "&#9733;" : "&#9734;";
+  });
+}
+
+document.querySelectorAll("#annot-rating .annot-star").forEach(star => {
+  star.addEventListener("click", () => {
+    const val = parseInt(star.dataset.val);
+    annotRating = annotRating === val ? 0 : val;
+    renderStars(annotRating);
+  });
+  star.addEventListener("mouseenter", () => {
+    const val = parseInt(star.dataset.val);
+    document.querySelectorAll("#annot-rating .annot-star").forEach(s => {
+      s.innerHTML = parseInt(s.dataset.val) <= val ? "&#9733;" : "&#9734;";
+    });
+  });
+  star.addEventListener("mouseleave", () => renderStars(annotRating));
+});
+
+async function populateAnnotClipDropdown() {
+  const select = document.getElementById("annot-clip");
+  // Keep current selection
+  const current = select.value;
+  // Collect clip names from proxies + metadata
+  const names = new Set();
+  try {
+    const res = await fetch("/api/proxies");
+    if (res.ok) {
+      const data = await res.json();
+      (data.clips || []).forEach(c => names.add(c.name));
+    }
+  } catch(e) {}
+  // Keep existing options that are custom
+  const existing = new Set();
+  for (const opt of select.options) {
+    if (opt.value) existing.add(opt.value);
+  }
+  names.forEach(name => {
+    if (!existing.has(name)) {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      select.appendChild(opt);
+    }
+  });
+  if (current) select.value = current;
+}
+
+async function loadAnnotations() {
+  try {
+    const res = await fetch("/api/annotations");
+    if (!res.ok) return;
+    const data = await res.json();
+    const list = document.getElementById("annot-list");
+    list.innerHTML = "";
+    if (!data.annotations || data.annotations.length === 0) {
+      list.innerHTML = '<div style="color:var(--muted);font-size:0.78rem;text-align:center;padding:12px 0;">No annotations yet</div>';
+      return;
+    }
+    // Show newest first
+    const sorted = [...data.annotations].reverse();
+    sorted.forEach(a => {
+      const item = el("div", "annot-item");
+
+      const header = el("div", "annot-item-header");
+      header.appendChild(el("span", "annot-item-clip", a.clip));
+      if (a.created) header.appendChild(el("span", "annot-item-date", a.created));
+      item.appendChild(header);
+
+      if (a.rating > 0) {
+        const stars = el("div", "annot-item-stars");
+        for (let i = 1; i <= 5; i++) {
+          stars.innerHTML += i <= a.rating ? "&#9733;" : "&#9734;";
+        }
+        item.appendChild(stars);
+      }
+
+      if (a.note) {
+        item.appendChild(el("div", "annot-item-note", a.note));
+      }
+
+      if (a.tags && a.tags.length > 0) {
+        const tagsDiv = el("div", "annot-item-tags");
+        a.tags.forEach(t => tagsDiv.appendChild(el("span", "annot-tag", t)));
+        item.appendChild(tagsDiv);
+      }
+
+      list.appendChild(item);
+    });
+  } catch(e) {}
+}
+
+document.getElementById("annot-submit").addEventListener("click", async function() {
+  const btn = this;
+  const clip = document.getElementById("annot-clip").value;
+  const note = document.getElementById("annot-note").value;
+  const tags = [];
+  document.querySelectorAll("#annot-tags input[type=checkbox]:checked").forEach(cb => tags.push(cb.value));
+
+  if (!clip) {
+    showToast("Select a clip first");
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "...";
+  try {
+    const res = await fetch("/api/annotate", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ clip, note, rating: annotRating, tags }),
+    });
+    if (res.ok) {
+      // Reset form
+      document.getElementById("annot-note").value = "";
+      annotRating = 0;
+      renderStars(0);
+      document.querySelectorAll("#annot-tags input[type=checkbox]").forEach(cb => cb.checked = false);
+      showToast("Annotation saved");
+      loadAnnotations();
+    } else {
+      const err = await res.json();
+      showToast("Error: " + (err.error || "unknown"));
+    }
+  } catch(e) {
+    showToast("Network error");
+  }
+  btn.disabled = false;
+  btn.textContent = "Submit";
+});
+
+populateAnnotClipDropdown();
+loadAnnotations();
+setInterval(loadAnnotations, 15000);
+setInterval(populateAnnotClipDropdown, 30000);
 </script>
 </body>
 </html>
