@@ -446,6 +446,12 @@ async function update() {
       "phase_6": "🔍 Phase 6 — Verify R2",
       "phase_7": "🏠 Phase 7 — NAS Sync + Verify",
       "phase_8": "📝 Phase 8 — Manifests",
+      "hash_iphone_nav2": "⏳ Hash iPhone Nav2 en cours",
+      "hash_h8_nav2": "⏳ Hash H8 SD Nav2 en cours",
+      "r2_a015": "☁️ R2 A015 sync",
+      "r2_a020": "☁️ R2 A020 upload",
+      "r2_iphone": "☁️ R2 iPhone upload",
+      "nas_sync": "🏠 NAS sync",
       "complete": "✅ COMPLET — 3-2-1 vérifié",
     };
     const wp = document.getElementById("wrangler-phase");
@@ -494,6 +500,8 @@ async function update() {
     hashRows.appendChild(buildHashRow("A015 BRAW → Nav2", data.hash.a015_nav2));
     hashRows.appendChild(buildHashRow("iPhone 2TB → Nav1", data.hash.iphone_nav1));
     hashRows.appendChild(buildHashRow("iPhone 2TB → Nav2", data.hash.iphone_nav2));
+    hashRows.appendChild(buildHashRow("H8 SD → Nav1", data.hash.h8_nav1));
+    hashRows.appendChild(buildHashRow("H8 SD → Nav2", data.hash.h8_nav2));
 
     // Achievements (skip toast on first load)
     if (!window._firstLoad) {

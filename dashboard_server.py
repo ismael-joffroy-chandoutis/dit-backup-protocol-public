@@ -314,25 +314,26 @@ def get_hash_progress(manifest_path, total_braw, running_fn=None):
 
         pct = 100 if status == "done" else int(done / total * 100) if total else 0
 
-        # Speed + ETA via birthtime du manifest
+        # Speed + ETA via cache progressive (taux réel entre 2 mesures)
         speed_str, eta_str = "—", "—"
         if status == "active" and done > 0:
-            try:
-                import stat as _stat
-                st = p.stat()
-                birth = getattr(st, "st_birthtime", st.st_mtime)
-                elapsed = datetime.now().timestamp() - birth
-                if elapsed > 5:
-                    rate = done / elapsed          # fichiers/sec
-                    remaining = max(total - done, 0)
+            cache_key_h = f"__hash_rate_{manifest_path}__"
+            now_h = time.time()
+            if cache_key_h in _ssh_cache:
+                prev_done_h, prev_ts_h = _ssh_cache[cache_key_h]
+                dt_h = now_h - prev_ts_h
+                if dt_h > 10 and done > prev_done_h:
+                    rate = (done - prev_done_h) / dt_h
+                    remaining = max(total_braw - done, 0)
                     eta_sec = int(remaining / rate) if rate > 0 else 0
                     h2, m2, s2 = eta_sec // 3600, (eta_sec % 3600) // 60, eta_sec % 60
                     eta_str = f"{h2}:{m2:02d}:{s2:02d}" if h2 else f"{m2}:{s2:02d}"
-                    # Vitesse en fichiers/min
-                    fpm = rate * 60
-                    speed_str = f"{fpm:.1f} f/min"
-            except Exception:
-                pass
+                    speed_str = f"{rate * 60:.1f} f/min"
+                    _ssh_cache[cache_key_h] = (done, now_h)
+                elif dt_h > 30:
+                    _ssh_cache[cache_key_h] = (done, now_h)
+            else:
+                _ssh_cache[cache_key_h] = (done, now_h)
 
         return {"done": done, "total": total, "percent": pct, "status": status,
                 "speed": speed_str, "eta": eta_str}
@@ -447,6 +448,29 @@ def iphone_nav1_status():
         pass
     return "waiting", 0, "—", "—"
 
+_R2_START = {"A015": "R2 A015 sync depuis Nav2", "A020": "R2 A020 depuis Nav2",
+             "iPhone": "R2 iPhone depuis Nav2", "H8": "R2 H8 depuis Nav2"}
+_R2_END   = {"A015": "R2 A015 sync terminé", "A020": "R2 A020 terminé",
+             "iPhone": "R2 iPhone terminé", "H8": "R2 H8 terminé"}
+
+def _r2_step_status(label):
+    """Status R2 par source. Marqueurs EXACTS du script final_sequence.sh."""
+    try:
+        wlog = Path("/tmp/silverstack_wrangler.log").read_text(errors="replace") if Path("/tmp/silverstack_wrangler.log").exists() else ""
+        end = _R2_END.get(label, "")
+        start = _R2_START.get(label, "")
+        if end and end in wlog:
+            return "done"
+        if start and start in wlog:
+            return "active"
+    except Exception:
+        pass
+    return "waiting"
+
+def _r2_step_pct(label):
+    s = _r2_step_status(label)
+    return 100 if s == "done" else 50 if s == "active" else 0
+
 def get_status():
     xp_data = load_xp()
 
@@ -505,13 +529,32 @@ def get_status():
         wrangler_log_content = ""
     iphone_nav2_finished = "iPhone Nav2 copie terminée" in wrangler_log_content
 
+    iphone_eta = "—"
     if iphone_nav2_finished or iphone_nav2_done >= iphone_total_mov:
         iphone_status, iphone_pct = "done", 100
-        iphone_speed = "—"
+        iphone_speed, iphone_eta = "—", "0:00"
     elif iphone_nav2_done > 0:
         iphone_status = "active"
         iphone_pct = min(int(iphone_nav2_done / iphone_total_mov * 100), 99)
         iphone_speed = "local"
+        # ETA basé sur le taux de fichiers (cache progressive)
+        cache_key = "__iphone_nav2_rate__"
+        now_ts = time.time()
+        if cache_key in _ssh_cache:
+            prev_done, prev_ts = _ssh_cache[cache_key]
+            dt = now_ts - prev_ts
+            if dt > 20 and iphone_nav2_done > prev_done:
+                rate = (iphone_nav2_done - prev_done) / dt
+                remaining = iphone_total_mov - iphone_nav2_done
+                eta_sec = int(remaining / rate) if rate > 0 else 0
+                h, m2, s = eta_sec // 3600, (eta_sec % 3600) // 60, eta_sec % 60
+                iphone_eta = f"{h}:{m2:02d}:{s:02d}" if h else f"{m2}:{s:02d}"
+                iphone_speed = f"{rate * 60:.1f} f/min"
+                _ssh_cache[cache_key] = (iphone_nav2_done, now_ts)
+            elif dt > 60:
+                _ssh_cache[cache_key] = (iphone_nav2_done, now_ts)
+        else:
+            _ssh_cache[cache_key] = (iphone_nav2_done, now_ts)
     else:
         iphone_status, iphone_pct, iphone_speed = "waiting", 0, "—"
 
@@ -614,10 +657,36 @@ def get_status():
     hash_iphone_src  = get_hash_progress("/tmp/iPhone_source_xxh128.txt", 80)
     hash_a020_nav1   = get_hash_progress("/tmp/A020_nav1_xxh128.txt", 25)
     hash_a015_nav1   = get_hash_progress("/tmp/A015_nav1_xxh128.txt", 33)
+    # xxhsum avec tous les args n'écrit qu'à la fin — forcer "active" si process tourne
+    if hash_a015_nav1["status"] == "waiting" and xxhsum_running():
+        hash_a015_nav1["status"] = "active"
     hash_iphone_nav1 = get_hash_progress("/tmp/iPhone_nav1_xxh128.txt", 80)
     hash_a015_nav2   = get_hash_progress("/tmp/A015_nav2_xxh128.txt", 33, running_fn=rclone_hashsum_running)
     hash_a020_nav2   = get_hash_progress("/tmp/A020_nav2_xxh128.txt", 25, running_fn=rclone_hashsum_running)
     hash_iphone_nav2 = get_hash_progress("/tmp/iPhone_nav2_xxh128.txt", 80, running_fn=rclone_hashsum_running)
+    hash_h8_src      = get_hash_progress("/tmp/H8_source_xxh128.txt", 77)
+    hash_h8_nav1     = get_hash_progress("/tmp/H8_nav1_xxh128.txt", 77)
+    hash_h8_nav2     = get_hash_progress("/tmp/H8_nav2_xxh128.txt", 77, running_fn=rclone_hashsum_running)
+
+    # BIT-PERFECT H8 Nav2
+    bitperfect_h8_nav2 = False
+    if Path("/tmp/H8_source_xxh128.txt").exists() and Path("/tmp/H8_nav2_xxh128.txt").exists():
+        try:
+            hs2 = sorted([l.split()[0] for l in Path("/tmp/H8_source_xxh128.txt").read_text().splitlines() if l.strip()])
+            hd2 = sorted([l.split()[0] for l in Path("/tmp/H8_nav2_xxh128.txt").read_text().splitlines() if l.strip()])
+            bitperfect_h8_nav2 = (hs2 == hd2 and len(hs2) > 0)
+        except Exception:
+            pass
+
+    # BIT-PERFECT H8 Nav1
+    bitperfect_h8_nav1 = False
+    if Path("/tmp/H8_source_xxh128.txt").exists() and Path("/tmp/H8_nav1_xxh128.txt").exists():
+        try:
+            hs = sorted([l.split()[0] for l in Path("/tmp/H8_source_xxh128.txt").read_text().splitlines() if l.strip()])
+            hd = sorted([l.split()[0] for l in Path("/tmp/H8_nav1_xxh128.txt").read_text().splitlines() if l.strip()])
+            bitperfect_h8_nav1 = (hs == hd and len(hs) > 0)
+        except Exception:
+            pass
 
     # BIT-PERFECT A015 Nav1
     bitperfect_a015_nav1 = False
@@ -651,12 +720,32 @@ def get_status():
     except (FileNotFoundError, OSError):
         wlog = ""
     if wlog:
-        for p in ["PHASE 8", "PHASE 7", "PHASE 6", "PHASE 5", "PHASE 4", "PHASE 3", "PHASE 2", "PHASE 1"]:
-            if p in wlog:
-                wrangler_phase = p.lower().replace(" ", "_")
-                break
-        if "COMPLET" in wlog and "BACKUP NAGE" in wlog:
-            wrangler_phase = "complete"
+        # Séquence finale a priorité sur l'ancien wrangler
+        if "SÉQUENCE FINALE" in wlog:
+            # Dernière ligne significative après "SÉQUENCE FINALE"
+            seq_start = wlog.rfind("SÉQUENCE FINALE")
+            seq_lines = wlog[seq_start:].splitlines()
+            for line in reversed(seq_lines):
+                if not line.strip():
+                    continue
+                if "SAFE ÉJECTER" in line:
+                    wrangler_phase = "complete"; break
+                elif "NAS" in line and "sync" in line.lower() and "terminé" not in line:
+                    wrangler_phase = "nas_sync"; break
+                elif "Verify R2" in line:
+                    wrangler_phase = "r2_verify"; break
+                elif "R2 H8" in line and "terminé" not in line:
+                    wrangler_phase = "r2_h8"; break
+                elif "R2 iPhone" in line and "terminé" not in line:
+                    wrangler_phase = "r2_iphone"; break
+                elif "R2 A020" in line and "terminé" not in line:
+                    wrangler_phase = "r2_a020"; break
+                elif "R2 A015" in line and "terminé" not in line:
+                    wrangler_phase = "r2_a015"; break
+                elif "Hash H8" in line or "H8 Nav2" in line:
+                    wrangler_phase = "hash_h8_nav2"; break
+                elif "iPhone hash" in line or "Attente iPhone" in line:
+                    wrangler_phase = "hash_iphone_nav2"; break
 
     # BIT-PERFECT iPhone Nav1 — compare MOV source vs Nav1
     bitperfect_iphone = False
@@ -741,16 +830,71 @@ def get_status():
                 "status": iphone_status,
                 "percent": iphone_pct,
                 "speed": iphone_speed,
-                "eta": "—",
+                "eta": iphone_eta,
                 "files": f"{iphone_nav2_done}/{iphone_total_mov}",
                 "bitperfect": bitperfect_iphone_nav2,
             },
             {
-                "label": "R2 Cloud",
-                "dest": "☁️",
+                "label": "H8 SD",
+                "dest": "Nav1",
+                "machine": "MacBook",
+                "status": "done",
+                "percent": 100,
+                "speed": "—",
+                "eta": "—",
+                "files": "77/77",
+                "bitperfect": bitperfect_h8_nav1,
+            },
+            {
+                "label": "H8 SD",
+                "dest": "Nav2",
                 "machine": "Nomad",
-                "status": r2_status,
-                "percent": r2_pct,
+                "status": "done",
+                "percent": 100,
+                "speed": "—",
+                "eta": "—",
+                "files": "77/77",
+                "bitperfect": bitperfect_h8_nav2 if 'bitperfect_h8_nav2' in dir() else False,
+            },
+            {
+                "label": "A015 BRAW",
+                "dest": "R2 ☁️",
+                "machine": "Nomad",
+                "status": _r2_step_status("A015"),
+                "percent": _r2_step_pct("A015"),
+                "speed": "—",
+                "eta": "—",
+                "files": "—",
+                "bitperfect": False,
+            },
+            {
+                "label": "A020 BRAW",
+                "dest": "R2 ☁️",
+                "machine": "Nomad",
+                "status": _r2_step_status("A020"),
+                "percent": _r2_step_pct("A020"),
+                "speed": "—",
+                "eta": "—",
+                "files": "—",
+                "bitperfect": False,
+            },
+            {
+                "label": "iPhone 2TB",
+                "dest": "R2 ☁️",
+                "machine": "Nomad",
+                "status": _r2_step_status("iPhone"),
+                "percent": _r2_step_pct("iPhone"),
+                "speed": "—",
+                "eta": "—",
+                "files": "—",
+                "bitperfect": False,
+            },
+            {
+                "label": "H8 SD",
+                "dest": "R2 ☁️",
+                "machine": "Nomad",
+                "status": _r2_step_status("H8"),
+                "percent": _r2_step_pct("H8"),
                 "speed": "—",
                 "eta": "—",
                 "files": "—",
@@ -782,6 +926,8 @@ def get_status():
             "a015_nav2": bitperfect_a015,
             "iphone_nav1": bitperfect_iphone,
             "iphone_nav2": bitperfect_iphone_nav2,
+            "h8_nav1": bitperfect_h8_nav1,
+            "h8_nav2": bitperfect_h8_nav2,
         },
         "hashing": [
             {"label": "xxhsum A020 source",    "machine": "MacBook", **hash_a020_src},
@@ -793,6 +939,9 @@ def get_status():
             {"label": "xxhsum A015 → Nav2",    "machine": "Nomad",   **hash_a015_nav2},
             {"label": "xxhsum A020 → Nav2",    "machine": "Nomad",   **hash_a020_nav2},
             {"label": "xxhsum iPhone → Nav2",  "machine": "Nomad",   **hash_iphone_nav2},
+            {"label": "xxhsum H8 SD source",   "machine": "MacBook", **hash_h8_src},
+            {"label": "xxhsum H8 SD → Nav1",   "machine": "MacBook", **hash_h8_nav1},
+            {"label": "xxhsum H8 SD → Nav2",   "machine": "Nomad",   **hash_h8_nav2},
         ],
         "wrangler": wrangler_phase,
         "disks": disks,
