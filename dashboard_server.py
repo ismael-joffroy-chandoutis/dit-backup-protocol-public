@@ -112,7 +112,11 @@ def count_nav1_files(folder):
 
 def xxhsum_running():
     """Vérifie si un processus xxhsum est actif."""
-    return bool(os.popen("ps -A -o args | grep 'xxhsum' | grep -v grep").read().strip())
+    try:
+        out = subprocess.run(["ps", "-A", "-o", "args"], capture_output=True, text=True, timeout=5).stdout
+        return "xxhsum" in out and "grep" not in out.split("xxhsum")[0][-20:]
+    except Exception:
+        return False
 
 def rclone_hashsum_running():
     """Vérifie si rclone hashsum tourne (pour A015 Nav2)."""
@@ -122,6 +126,7 @@ def rclone_hashsum_running():
     except Exception:
         return False
 
+MINI = "user@MINI_IP"
 NOMAD_LAN = "192.168.4.43"
 NOMAD_TS  = "100.82.222.123"
 
@@ -160,6 +165,39 @@ def _ssh(cmd: str, ttl: int = 15) -> str:
         return out
     except Exception:
         return ""
+
+def nas_disk_usage():
+    """Espace disque NAS UGreen via Mac Mini SSH (cache 60s)."""
+    key = "__nas_df__"
+    now = time.time()
+    if key in _ssh_cache:
+        val, ts = _ssh_cache[key]
+        if now - ts < 60:
+            return val
+    try:
+        result = subprocess.run(
+            f"ssh -o ConnectTimeout=3 -o ServerAliveInterval=2 {MINI} 'df -k ~/mnt-nas-shared/ 2>/dev/null' 2>/dev/null",
+            shell=True, capture_output=True, timeout=8
+        )
+        out = result.stdout.decode("utf-8", errors="replace")
+        for line in out.splitlines():
+            if "mnt-nas" in line or "192.168" in line:
+                parts = line.split()
+                if len(parts) >= 4:
+                    total_kb = int(parts[1])
+                    used_kb  = int(parts[2])
+                    free_kb  = int(parts[3])
+                    info = {
+                        "used_gb":  round(used_kb  / 1e6, 1),
+                        "total_gb": round(total_kb / 1e6, 1),
+                        "free_gb":  round(free_kb  / 1e6, 1),
+                        "percent":  int(used_kb / total_kb * 100) if total_kb else 0,
+                    }
+                    _ssh_cache[key] = (info, now)
+                    return info
+    except Exception:
+        pass
+    return None
 
 def nav2_disk_usage():
     """Espace disque G: sur Nomad via SSH (cache 30s)."""
@@ -202,7 +240,7 @@ def a020_nav2_progress(total_braw=25):
         return {"status": "done", "percent": 100, "done": total_braw, "total": total_braw, "speed": "—", "eta": "—"}
 
     # Compter les fichiers BRAW dans la destination via dir /b (compte les lignes côté Mac)
-    dir_out = _ssh('dir /b G:\\CARD1_FOLDER\\*.braw 2>nul', ttl=10)
+    dir_out = _ssh('dir /b G:\\A020_BRAW_2026-04-03\\*.braw 2>nul', ttl=10)
     done = len([l for l in dir_out.splitlines() if l.strip()])
     finished = done >= total_braw
 
@@ -413,7 +451,7 @@ def get_status():
     xp_data = load_xp()
 
     # Nav1 A020
-    nav1_a020_files = count_nav1_files("/Volumes/NAV1_VOLUME/CARD1_FOLDER")
+    nav1_a020_files = count_nav1_files("/Volumes/NAV1_VOLUME/A020_BRAW_2026-04-03")
     nav1_a020_total = 25
     nav1_a020_pct = int(nav1_a020_files / nav1_a020_total * 100)
 
@@ -456,38 +494,23 @@ def get_status():
     else:
         nav2_a015_status, nav2_a015_pct, nav2_a015_files = "waiting", 0, "0/33"
 
-    # Nav2 iPhone — robocopy Nomad (pipeline log, après A020)
-    pipeline_log = Path("/tmp/a020_iphone_pipeline.log")
-    iphone_started = pipeline_log.exists() and "iPhone" in pipeline_log.read_text(errors="replace")
-    iphone_robo = None
-    if iphone_started:
-        # Compte les fichiers iPhone dans le même pipeline log
-        try:
-            content = pipeline_log.read_text(errors="replace")
-            # Localiser la section iPhone (après "DCIM" ou "iPhone Nav2")
-            idx = content.find("iPhone détecté")
-            if idx == -1:
-                idx = content.find("lancement iPhone")
-            if idx > 0:
-                iphone_section = content[idx:]
-                done_ip = sum(1 for l in iphone_section.split("\n")
-                              if "Nouveau fichier" in l and not "._" in l)
-                finished_ip = "iPhone Nav2 COMPLET" in content
-                if finished_ip:
-                    iphone_robo = {"status": "done", "percent": 100, "done": done_ip, "speed": "—"}
-                elif done_ip > 0:
-                    iphone_robo = {"status": "active", "percent": min(int(done_ip/1000*100), 99), "done": done_ip, "speed": "local"}
-                else:
-                    iphone_robo = {"status": "active", "percent": 0, "done": 0, "speed": "local"}
-        except Exception:
-            pass
+    # Nav2 iPhone — compte les .MOV sur Nomad via SSH
+    iphone_total_mov = 80
+    iphone_dir = _ssh('dir /b G:\\iPhone-2TB_2026-04-03\\DCIM\\100APPLE\\*.MOV 2>nul', ttl=10)
+    iphone_nav2_done = len([l for l in iphone_dir.splitlines() if l.strip()])
+    # Aussi checker le wrangler log
+    try:
+        wrangler_log_content = Path("/tmp/silverstack_wrangler.log").read_text(errors="replace") if Path("/tmp/silverstack_wrangler.log").exists() else ""
+    except (FileNotFoundError, OSError):
+        wrangler_log_content = ""
+    iphone_nav2_finished = "iPhone Nav2 copie terminée" in wrangler_log_content
 
-    if iphone_robo and iphone_robo["status"] == "done":
+    if iphone_nav2_finished or iphone_nav2_done >= iphone_total_mov:
         iphone_status, iphone_pct = "done", 100
         iphone_speed = "—"
-    elif iphone_robo and iphone_robo["status"] == "active":
+    elif iphone_nav2_done > 0:
         iphone_status = "active"
-        iphone_pct = iphone_robo.get("percent", 0)
+        iphone_pct = min(int(iphone_nav2_done / iphone_total_mov * 100), 99)
         iphone_speed = "local"
     else:
         iphone_status, iphone_pct, iphone_speed = "waiting", 0, "—"
@@ -496,6 +519,7 @@ def get_status():
     r2_logs = glob.glob("/tmp/rclone_r2_*_final.log")
     r2_parsed = {l: parse_rclone_log(l) for l in r2_logs}
     r2_results = [v for v in r2_parsed.values() if v]
+    pipeline_log = Path("/tmp/a020_iphone_pipeline.log")
     pipeline_text = pipeline_log.read_text(errors="replace") if pipeline_log.exists() else ""
     r2_pipeline_done = "R2 COMPLET" in pipeline_text
     r2_pipeline_active = "Lancement R2" in pipeline_text and not r2_pipeline_done
@@ -584,13 +608,46 @@ def get_status():
 
     level_name, next_level_xp = get_level(xp_data["total_xp"])
 
-    # Hash progress
-    hash_a020_src  = get_hash_progress("/tmp/A020_source_xxh128.txt", 25)
-    hash_a015_src  = get_hash_progress("/tmp/A015_source_xxh128.txt", 33)
-    hash_a020_nav1   = get_hash_progress("/tmp/A020_nav1_xxh128.txt", 25)
-    hash_a015_nav2   = get_hash_progress("/tmp/A015_nav2_xxh128.txt", 33, running_fn=rclone_hashsum_running)
+    # Hash progress — toutes les destinations
+    hash_a020_src    = get_hash_progress("/tmp/A020_source_xxh128.txt", 25)
+    hash_a015_src    = get_hash_progress("/tmp/A015_source_xxh128.txt", 33)
     hash_iphone_src  = get_hash_progress("/tmp/iPhone_source_xxh128.txt", 80)
+    hash_a020_nav1   = get_hash_progress("/tmp/A020_nav1_xxh128.txt", 25)
     hash_iphone_nav1 = get_hash_progress("/tmp/iPhone_nav1_xxh128.txt", 80)
+    hash_a015_nav2   = get_hash_progress("/tmp/A015_nav2_xxh128.txt", 33, running_fn=rclone_hashsum_running)
+    hash_a020_nav2   = get_hash_progress("/tmp/A020_nav2_xxh128.txt", 25, running_fn=rclone_hashsum_running)
+    hash_iphone_nav2 = get_hash_progress("/tmp/iPhone_nav2_xxh128.txt", 80, running_fn=rclone_hashsum_running)
+
+    # BIT-PERFECT A020 Nav2
+    bitperfect_a020_nav2 = False
+    if Path("/tmp/A020_source_xxh128.txt").exists() and Path("/tmp/A020_nav2_xxh128.txt").exists():
+        src_b = braw_only_sorted("/tmp/A020_source_xxh128.txt")
+        dst_b = braw_only_sorted("/tmp/A020_nav2_xxh128.txt")
+        bitperfect_a020_nav2 = (src_b is not None and dst_b is not None
+                                and src_b == dst_b and len(src_b) > 0)
+
+    # BIT-PERFECT iPhone Nav2
+    bitperfect_iphone_nav2 = False
+    if Path("/tmp/iPhone_source_xxh128.txt").exists() and Path("/tmp/iPhone_nav2_xxh128.txt").exists():
+        src_m2 = extract_sorted("/tmp/iPhone_source_xxh128.txt", ".mov")
+        dst_m2 = extract_sorted("/tmp/iPhone_nav2_xxh128.txt", ".mov")
+        bitperfect_iphone_nav2 = (src_m2 is not None and dst_m2 is not None
+                                  and src_m2 == dst_m2 and len(src_m2) > 0)
+
+    # Wrangler phase (lit le log)
+    wrangler_phase = "idle"
+    wrangler_log = Path("/tmp/silverstack_wrangler.log")
+    try:
+        wlog = wrangler_log.read_text(errors="replace") if wrangler_log.exists() else ""
+    except (FileNotFoundError, OSError):
+        wlog = ""
+    if wlog:
+        for p in ["PHASE 8", "PHASE 7", "PHASE 6", "PHASE 5", "PHASE 4", "PHASE 3", "PHASE 2", "PHASE 1"]:
+            if p in wlog:
+                wrangler_phase = p.lower().replace(" ", "_")
+                break
+        if "COMPLET" in wlog and "BACKUP NAGE" in wlog:
+            wrangler_phase = "complete"
 
     # BIT-PERFECT iPhone Nav1 — compare MOV source vs Nav1
     bitperfect_iphone = False
@@ -606,6 +663,7 @@ def get_status():
     disks = {
         "nav1": disk_usage("/Volumes/NAV1_VOLUME"),
         "nav2": nav2_disk_usage(),
+        "nas": nas_disk_usage(),
     }
 
     return {
@@ -654,7 +712,7 @@ def get_status():
                 "speed": a020_robo.get("speed", "—") if a020_robo else "—",
                 "eta": a020_robo.get("eta", "—") if a020_robo else "—",
                 "files": f"{a020_robo['done']}/{a020_robo['total']}" if a020_robo else "—/25",
-                "bitperfect": False,
+                "bitperfect": bitperfect_a020_nav2,
             },
             {
                 "label": "iPhone 2TB",
@@ -664,7 +722,8 @@ def get_status():
                 "percent": iphone_pct,
                 "speed": iphone_speed,
                 "eta": "—",
-                "bitperfect": False,
+                "files": f"{iphone_nav2_done}/{iphone_total_mov}",
+                "bitperfect": bitperfect_iphone_nav2,
             },
             {
                 "label": "R2 Cloud",
@@ -674,6 +733,7 @@ def get_status():
                 "percent": r2_pct,
                 "speed": "—",
                 "eta": "—",
+                "files": "—",
                 "bitperfect": False,
             },
             {
@@ -684,6 +744,7 @@ def get_status():
                 "percent": 100 if nas_done else 0,
                 "speed": "—",
                 "eta": "—",
+                "files": "—",
                 "bitperfect": False,
             },
         ],
@@ -696,8 +757,10 @@ def get_status():
         "achievements": achievements,
         "hash": {
             "a020_nav1": bitperfect_nav1,
+            "a020_nav2": bitperfect_a020_nav2,
             "a015_nav2": bitperfect_a015,
             "iphone_nav1": bitperfect_iphone,
+            "iphone_nav2": bitperfect_iphone_nav2,
         },
         "hashing": [
             {"label": "xxhsum A020 source",    "machine": "MacBook", **hash_a020_src},
@@ -706,12 +769,16 @@ def get_status():
             {"label": "xxhsum A020 → Nav1",    "machine": "MacBook", **hash_a020_nav1},
             {"label": "xxhsum iPhone → Nav1",  "machine": "MacBook", **hash_iphone_nav1},
             {"label": "xxhsum A015 → Nav2",    "machine": "Nomad",   **hash_a015_nav2},
+            {"label": "xxhsum A020 → Nav2",    "machine": "Nomad",   **hash_a020_nav2},
+            {"label": "xxhsum iPhone → Nav2",  "machine": "Nomad",   **hash_iphone_nav2},
         ],
+        "wrangler": wrangler_phase,
         "disks": disks,
     }
 
 
 class Handler(SimpleHTTPRequestHandler):
+    """Handler HTTP avec protection contre les crashs."""
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory="/tmp/backup_dashboard", **kwargs)
 
@@ -741,8 +808,9 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    from http.server import ThreadingHTTPServer
     port = 4242
-    server = HTTPServer(("0.0.0.0", port), Handler)
+    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     print(f"Dashboard: http://localhost:{port}")
     print(f"Réseau:    http://$(hostname -I | awk '{{print $1}}'):{port}")
     server.serve_forever()

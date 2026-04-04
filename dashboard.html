@@ -239,6 +239,9 @@
   <div class="xp-total" id="xp-total">0 XP</div>
 </div>
 
+<!-- Wrangler phase -->
+<div id="wrangler-phase" style="text-align:center;margin-bottom:12px;font-size:0.75rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);"></div>
+
 <!-- Disk gauges -->
 <div class="disks-row" id="disks-row"></div>
 
@@ -432,10 +435,30 @@ async function update() {
       document.getElementById("xp-next").textContent = "MAX LEVEL 🌟";
     }
 
+    // Wrangler phase
+    const phases = {
+      "idle": "⏸ Idle",
+      "phase_1": "⏳ Phase 1 — Nettoyage I/O",
+      "phase_2": "⏳ Phase 2 — Hash A015 Nav2",
+      "phase_3": "⏳ Phase 3 — Hash A020 Nav2",
+      "phase_4": "⏳ Phase 4 — iPhone → Nav2 + Hash",
+      "phase_5": "☁️ Phase 5 — R2 Upload",
+      "phase_6": "🔍 Phase 6 — Verify R2",
+      "phase_7": "🏠 Phase 7 — NAS Sync + Verify",
+      "phase_8": "📝 Phase 8 — Manifests",
+      "complete": "✅ COMPLET — 3-2-1 vérifié",
+    };
+    const wp = document.getElementById("wrangler-phase");
+    if (data.wrangler) {
+      wp.textContent = phases[data.wrangler] || data.wrangler;
+      wp.style.color = data.wrangler === "complete" ? "var(--green)" : "var(--accent)";
+    }
+
     // Disk space
     if (data.disks) {
       renderDisk("nav1", "💾 Nav1 (MacBook)", data.disks.nav1);
       renderDisk("nav2", "💾 Nav2 (Nomad)", data.disks.nav2);
+      renderDisk("nas", "🏠 NAS UGreen", data.disks.nas);
     }
 
     // Transfers
@@ -462,14 +485,20 @@ async function update() {
       else hashCardsEl.appendChild(newCard);
     });
 
-    // Bit-perfect results
+    // Bit-perfect results — toutes destinations
     const hashRows = document.getElementById("hash-rows");
     hashRows.innerHTML = "";
     hashRows.appendChild(buildHashRow("A020 BRAW → Nav1", data.hash.a020_nav1));
-    hashRows.appendChild(buildHashRow("iPhone 2TB → Nav1", data.hash.iphone_nav1));
+    hashRows.appendChild(buildHashRow("A020 BRAW → Nav2", data.hash.a020_nav2));
     hashRows.appendChild(buildHashRow("A015 BRAW → Nav2", data.hash.a015_nav2));
+    hashRows.appendChild(buildHashRow("iPhone 2TB → Nav1", data.hash.iphone_nav1));
+    hashRows.appendChild(buildHashRow("iPhone 2TB → Nav2", data.hash.iphone_nav2));
 
-    // Achievements
+    // Achievements (skip toast on first load)
+    if (!window._firstLoad) {
+      window._firstLoad = true;
+      prevAchievements = [...data.achievements];
+    }
     const newAch = data.achievements.filter(a => !prevAchievements.includes(a));
     newAch.forEach(a => {
       showToast("🏆 " + (ACHIEVEMENT_LABELS[a] || a) + " UNLOCKED");
