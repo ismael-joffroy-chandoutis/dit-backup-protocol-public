@@ -79,3 +79,5 @@ bash silverstack_wrangler.sh
 ## License
 
 MIT
+
+By [Ismaël Joffroy Chandoutis](https://ismaeljoffroychandoutis.com).
