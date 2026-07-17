@@ -1,6 +1,10 @@
+**English** · [Français](README.fr.md)
+
 # DIT Backup Protocol — Silverstack-Level for Film Production
 
 Open-source backup protocol for cinema rushes. Netflix DIT / Silverstack equivalent using open tools.
+
+> This is the public, open-source release of a private production pipeline used on actual film shoots. Paths, hostnames, and credentials are generalized as environment variables for public use; the private version stays a separate, production-specific repository.
 
 ## Protocol
 

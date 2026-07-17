@@ -1,12 +1,12 @@
 cff-version: 1.2.0
 message: "If you use or cite this work, please credit it as below."
-title: "dit-backup-protocol-public"
+title: "dit-backup-protocol"
 abstract: "Open-source DIT backup protocol for cinema rushes — Silverstack-equivalent chain of custody, ASC MHL v2.0, dual-platform macOS/Windows"
 type: software
 authors:
   - given-names: "Ismaël"
     family-names: "Joffroy Chandoutis"
-    website: "https://github.com/12georgiadis"
-repository-code: "https://github.com/12georgiadis/dit-backup-protocol-public"
-url: "https://github.com/12georgiadis/dit-backup-protocol-public"
-license: PolyForm-Noncommercial-1.0.0
+    website: "https://github.com/ismael-joffroy-chandoutis"
+repository-code: "https://github.com/ismael-joffroy-chandoutis/dit-backup-protocol"
+url: "https://github.com/ismael-joffroy-chandoutis/dit-backup-protocol"
+license: MIT
