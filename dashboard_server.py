@@ -146,7 +146,7 @@ def rclone_hashsum_running():
 
 MINI = "user@MINI_IP"
 NOMAD_LAN = "192.168.4.43"
-NOMAD_TS  = "100.82.222.123"
+NOMAD_TS  = os.environ.get("NOMAD_TS", "")  # Tailscale IP of the GPU node
 
 def _nomad_ip() -> str:
     """Retourne l'IP Nomad accessible (LAN préféré, Tailscale sinon). Cache 60s."""
